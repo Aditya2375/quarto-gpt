@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
-checkpoint.pt
-train.log
+*.pt
+*.log
 input.txt
-PLAN.md
+node_modules/
