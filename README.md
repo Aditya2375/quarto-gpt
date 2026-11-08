@@ -1,38 +1,74 @@
-# Quarto
+# Quarto, edition II
 
-A character-level GPT trained from scratch, with a browser writing desk, next-character probabilities, attention inspection and measured loss history. It is a learning model, not a chatbot or a source of quotations.
+[Open the live laboratory](https://aditya2375.github.io/quarto-gpt/)
 
-## Run
+Two genuine character-level GPT checkpoints, trained from scratch. Compare writing, next-character distributions, full causal attention maps, passage surprise and a real head-silencing intervention. No chatbot wrapper or remote model. The original checkpoint remains intact.
 
-Serve this directory with `python -m http.server 8000`, then open http://localhost:8000. No build, API key or remote inference. The first visit downloads a 7.4 MB JSON checkpoint. Prompts stay in memory; there is no analytics or storage.
+## Run locally
+
+```sh
+python -m http.server 8000
+# Open http://localhost:8000
+```
+
+The first load downloads two JSON checkpoints, about 15 MB. All inference runs in a worker. No accounts, uploads, storage, analytics or prompt transmission. CSP restricts scripts, workers and fetch to same-origin files. Text is rendered with textContent, not HTML. No PyTorch pickle is used by the browser.
+
+## Same architecture, different training
+
+Each checkpoint has 357,473 parameters, context 96, width 96, three pre-LayerNorm decoder blocks with four causal heads each, learned positional embeddings, GELU-tanh feed-forward layers, final LayerNorm and a 65-character output head. All weights are trained from scratch, seed 410.
+
+Edition I: original 1,500-step constant learning rate 0.0007 checkpoint, unchanged in `1-model.json`.
+Edition II: fixed 6,000 updates, cosine rate 0.0007 to 0.00007. Batch 24, AdamW weight decay 0.01, clip norm 1. Same architecture, data split and initialization. Training time and schedule change together, so this comparison does not isolate either effect.
+
+Training source: first 90% of the 1,115,394-character Tiny Shakespeare corpus. Last 111,540 characters are validation and receive no gradient updates. Training and evaluation generators are separate. Edition II's budget was fixed in advance, no early stopping. Its final sampled validation loss is 1.6928404, versus original 1.9304641, each from 20 random batches. Do not confuse those sampled values with the deterministic evaluation below.
+
+## Full validation comparison
+
+`compare.py` evaluates all 1,161 non-overlapping 96-character input blocks of the existing validation split, targets shifted one character. 111,456 predictions, 83 trailing source characters unused. Corpus offsets and losses are recorded in `comparison.json`.
+
+| Checkpoint | Mean nats / character |
+|---|---:|
+| Edition I | 1.93411145 |
+| Edition II | 1.68587022 |
+
+Paired mean reduction 0.24824123 nats, 95% block-bootstrap interval [0.23912922, 0.25723340], 10,000 resamples, seed 172. Edition II improves 1,090 blocks, worsens 71, ties 0.
+
+This is the already-monitored validation split, not a new untouched test set. A contiguous excerpt split can share phrases, works and characters. The interval describes these fixed checkpoints and blocks from this corpus, not independent works or training-seed variability. Lower loss is a predictability result, not a claim of intelligence, factual accuracy or literary merit.
+
+## Inspect actual computations
+
+- Both manuscripts use the same opening, settings and seed. Each samples its own distribution. Seeded replay holds for fixed model/browser numerical behavior.
+- Temperature zero takes the first maximum. Top-k uses a threshold and includes boundary ties. Unsupported alphabet characters are rejected, not silently rewritten.
+- Inspector always analyzes the opening, not the generated continuation. It uses the last 96 characters. Changing the opening clears stale inspection values.
+- All 12 causal attention heads in all layers are shown as full query/key matrices. Future columns are exactly zero. Fixed 0–1 color scale. Click/tap or use arrow keys to read an exact weight.
+- Passage surprise is raw negative log probability for each character given its prefix in the inspected window, before sampling settings. First character is unscored. Nats and bits per character are displayed.
+- Head silencing is a real edition-II forward-pass intervention: the selected head's weighted-value output is zeroed at every position before output projection. Distribution shift is raw KL(original || silenced). Top displayed alternatives follow the current temperature/top-k. This is not a semantic explanation of a head. Writing always uses unmodified checkpoints.
+- Incremental K/V reuse is exact while learned positions stay fixed. At context 96, shifting the window requires a full re-prefill; cache is never used across a changed positional layout.
 
 ## Reproduce
 
-1. Install Python 3.10+ and `python -m pip install -r requirements.txt`.
-2. Download the exact [Tiny Shakespeare input](https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt) as `input.txt` in this directory. Its SHA-256 is recorded in 1-model.json and checked by the tests.
-3. Run `python train.py --steps 1500 --threads 2`.
-4. Run `python -m unittest -v` and `node test_transformer.cjs`.
+Python 3.10+ with NumPy and PyTorch. Download the exact [input.txt](https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt), SHA-256 `86c4e6aa9db7c042ec79f339dcb96d42b0075e16b8fc2e86bf0ca57e2dc565ed`.
 
-The included checkpoint has 357,473 parameters: 3 pre-LN blocks, width 96, 4 heads, learned positions, GELU-tanh feed-forward layers, context 96, and a 65-character alphabet. AdamW, learning rate 0.0007, weight decay 0.01, clip norm 1, batch 24, initialization seed 410, separate train/evaluation generators. Training used PyTorch 2.14.1+cpu. Floating-point behavior and CPU/library differences may affect exact replay of training. Python fixture tolerance is 1e-5 for float32 CPU/backend drift. Browser inference uses double precision and matches PyTorch fixture logits within 3e-6.
+```sh
+python -m pip install -r requirements.txt
+python train_refined.py --steps 6000 --chunk 6000 --threads 2
+python compare.py
+python export_trace.py
+python -m unittest -v
+node test_deep.cjs
+```
 
-The first 90% of 1,115,394 characters is training data; the last 10% is held out. Reported losses are means over 20 random batches per split at each checkpoint. Initial validation loss: 4.3020. Final validation loss: 1.9304640949. A contiguous character split does not prove leak-free generalization across Shakespeare's works. No test-set or conversational-quality claim is made.
+`--chunk 750` permits bounded runs: rerun the same command until it exports the final checkpoint. Local resume saves optimizer, training generator, evaluation generator, weights, step and history every 250 updates. Total budget cannot change mid-resume. To retrain from scratch, remove only the locally generated `resume-refined.pt`. Never load a resume file from an untrusted source. Resuming after completion safely re-exports. CPU/library differences can affect retraining; the shipped checkpoint is frozen. Original `train.py` reproduces edition I.
 
-## Browser controls
+## Verification
 
-Enter 1-512 supported characters. Generate 64-512 new characters, choose temperature 0-1.5, a seed, and all/top-8/top-20 sampling. A 32-bit LCG makes seeded sampling reproducible for the same prompt/settings/browser numerical behavior. At temperature zero the first-index maximum wins. Top-k uses a threshold and includes ties at the boundary. Only the last 96 characters are used at each step. Stop preserves the partial result. Generation runs in a Web Worker so controls remain responsive.
+Python tests check hash/split, both fixtures, model size, causal masking, normalization, silencing and recompute all 1,161 refined validation-block scores and bootstrap statistics. JavaScript compares all-token logits, every attention matrix, prefix causality, surprise and all 24 head ablations against independent PyTorch references. Max reference error is 1.14e-5 on float32 long-context logits. Tolerance 5e-5 accounts for CPU float32 versus browser double arithmetic. Cache parity is exact in 208 incremental/sliding steps across both checkpoints.
 
-The displayed probabilities are after temperature/top-k. During generation they belong to the character just sampled, not the next step after the displayed output. Attention shows the last query's weights in one head of the last layer. Attention is not an explanation of intent. Inputs outside the alphabet are rejected, not rewritten.
-
-## Tests and security
-
-Python tests cover causal masking, probability normalization, source hash/split, loss improvement and reference logits. The JavaScript test checks three independent PyTorch parity fixtures, attention normalization and seeded sampling. Browser checks cover generation, exact seeded replay, cancellation, unsupported-character and seed errors, desktop/mobile layout and runtime errors.
-
-Static files only. No accounts, secrets, payments, uploads, tracking or dependencies in the browser. All text is written using textContent. CSP restricts scripts, workers and connections to this origin. The worker validates generation settings. The JSON checkpoint is data, not executable code. Never load an untrusted PyTorch pickle; this browser does not use pickle files.
+Browser tests exercise both-model generation/replay, stop and preserved partial output, unsupported input, seed validation, matrix controls/click/keyboard, head silencing, 96-character scoring, benchmark filters and desktop/320/390px layout. To run: install Playwright with Node, then `node browser-check.cjs`; uses local Chrome, `CHROME_PATH` can override its path.
 
 ## Sources
 
-[Tiny Shakespeare](https://github.com/karpathy/char-rnn/tree/master/data/tinyshakespeare) is the public-domain text corpus used in character-model tutorials. [Karpathy's GPT lecture](https://github.com/karpathy/ng-video-lecture) is the educational reference. This is a small implementation of standard causal-transformer ideas, not an invention of the architecture.
+- [Tiny Shakespeare corpus](https://github.com/karpathy/char-rnn/tree/master/data/tinyshakespeare)
+- [Karpathy's GPT lecture](https://github.com/karpathy/ng-video-lecture)
 
-## Browser test harness
-
-`browser-check.cjs` ships the Chromium interaction/layout tests. Install Node.js and `npm install --no-save playwright`, then run `node browser-check.cjs`. It uses a local Chrome binary at `/usr/bin/google-chrome`; set `CHROME_PATH` for another location. Screenshots go to `/tmp`. The browser test server binds to localhost only.
+These are compact educational implementations of standard causal-transformer ideas, not a claim to have invented the architecture. Generated output can repeat, invent words and lose coherence. It is not a quotation, factual answer or conversational assistant.
