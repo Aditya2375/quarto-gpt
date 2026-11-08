@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+checkpoint.pt
+train.log
+input.txt
+PLAN.md
