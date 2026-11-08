@@ -28,5 +28,5 @@ def main():
     for head in range(4):
      logits,_=reference(net,x,(layer,head));ablations.append(dict(layer=layer,head=head,logits=logits[0,-1].tolist()))
   result.append(dict(file=filename,fixtures=fixtures,ablations=ablations))
- Path('trace-fixtures.json').write_text(json.dumps(result,separators=(',',':')))
+ Path('2-trace-fixtures.json').write_text(json.dumps(result,separators=(',',':')))
 if __name__=='__main__':main()
