@@ -1,0 +1,11 @@
+/* Causal transformer inference. Weights follow PyTorch [out, in] ordering. */
+function softmax(a,temp=1){let mx=Math.max(...a);let p=a.map(x=>Math.exp((x-mx)/temp)),s=p.reduce((a,b)=>a+b,0);return p.map(x=>x/s)}
+function dense(x,w,b){return x.map(row=>w.map((weights,j)=>{let s=b[j];for(let k=0;k<row.length;k++)s+=row[k]*weights[k];return s}))}
+function norm(x,w,b){return x.map(row=>{let mean=row.reduce((a,b)=>a+b,0)/row.length;let variance=row.reduce((a,b)=>a+(b-mean)**2,0)/row.length;let inv=1/Math.sqrt(variance+1e-5);return row.map((a,j)=>(a-mean)*inv*w[j]+b[j])})}
+function plus(a,b){return a.map((row,i)=>row.map((x,j)=>x+b[i][j]))}
+function forward(tokens,model){if(!tokens.length)throw Error('Empty context');const {width:d,heads:h,layers}=model.config,t=tokens.length,w=model.weights,k=d/h;let x=tokens.map((token,i)=>w['token.weight'][token].map((v,j)=>v+w['position.weight'][i][j]));let attention=[];
+for(let l=0;l<layers;l++){let prefix='blocks.'+l+'.',ln=norm(x,w[prefix+'norm1.weight'],w[prefix+'norm1.bias']),qkv=dense(ln,w[prefix+'qkv.weight'],w[prefix+'qkv.bias']),att=Array.from({length:t},()=>Array(d).fill(0));for(let head=0;head<h;head++){let off=head*k;let last=[];for(let i=0;i<t;i++){let scores=[];for(let j=0;j<=i;j++){let s=0;for(let c=0;c<k;c++)s+=qkv[i][off+c]*qkv[j][d+off+c];scores.push(s/Math.sqrt(k))}let p=softmax(scores);if(i===t-1)last=p;for(let c=0;c<k;c++){let v=0;for(let j=0;j<=i;j++)v+=p[j]*qkv[j][2*d+off+c];att[i][off+c]=v}}if(l===layers-1)attention.push(last)}x=plus(x,dense(att,w[prefix+'proj.weight'],w[prefix+'proj.bias']));let ff=dense(norm(x,w[prefix+'norm2.weight'],w[prefix+'norm2.bias']),w[prefix+'fc1.weight'],w[prefix+'fc1.bias']).map(row=>row.map(a=>.5*a*(1+Math.tanh(Math.sqrt(2/Math.PI)*(a+.044715*a*a*a)))));x=plus(x,dense(ff,w[prefix+'fc2.weight'],w[prefix+'fc2.bias']))}
+let out=norm([x[t-1]],w['norm.weight'],w['norm.bias']);return {logits:dense(out,w['head.weight'],w['head.bias'])[0],attention}}
+class RNG{constructor(seed){this.v=seed>>>0}next(){this.v=(Math.imul(1664525,this.v)+1013904223)>>>0;return this.v/4294967296}}
+function sample(prob,rng){let r=rng.next();for(let i=0;i<prob.length;i++){r-=prob[i];if(r<0)return i}return prob.length-1}
+if(typeof module!=='undefined')module.exports={forward,softmax,RNG,sample};
