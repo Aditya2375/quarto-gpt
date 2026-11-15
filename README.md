@@ -72,3 +72,7 @@ Browser tests exercise both-model generation/replay, stop and preserved partial 
 - [Karpathy's GPT lecture](https://github.com/karpathy/ng-video-lecture)
 
 These are compact educational implementations of standard causal-transformer ideas, not a claim to have invented the architecture. Generated output can repeat, invent words and lose coherence. It is not a quotation, factual answer or conversational assistant.
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache License 2.0](LICENSE-APACHE) at your option.
